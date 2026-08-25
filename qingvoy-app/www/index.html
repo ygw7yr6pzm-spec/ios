@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>青屿行文旅 - Qingvoy</title>
+  <meta name="description" content="Qingvoy 青屿行文旅 - 景点门票、交通安排、一日游、酒店住宿、租车及精彩旅游体验">
+  <meta name="theme-color" content="#ff5b00">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="青屿行">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/favicon.png" sizes="64x64">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #ffffff; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; -webkit-tap-highlight-color: transparent; }
+    #frame { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; z-index: 1; }
+
+    #boot {
+      position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(160deg, #fff6f0 0%, #ffe8de 100%);
+      transition: opacity .45s ease, visibility .45s ease;
+    }
+    #boot.hide { opacity: 0; visibility: hidden; pointer-events: none; }
+    .boot-inner { text-align: center; transform: translateY(-6%); }
+    .boot-logo { width: 96px; height: 96px; border-radius: 24px; box-shadow: 0 12px 32px rgba(255, 91, 0, .28); margin: 0 auto 18px; display: block; animation: pop .5s ease; }
+    @keyframes pop { 0% { transform: scale(.6); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+    .boot-title { font-size: 22px; font-weight: 800; color: #1a1a1a; letter-spacing: 1px; }
+    .boot-sub { font-size: 13px; color: #8a8a8a; margin-top: 6px; }
+    .spinner {
+      width: 30px; height: 30px; margin: 26px auto 0; border-radius: 50%;
+      border: 3px solid #ffd9c7; border-top-color: #ff5b00;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #err {
+      position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center;
+      background: #fff; text-align: center;
+    }
+    #err.show { display: flex; }
+    .err-inner { padding: 0 40px; }
+    .err-icon {
+      width: 64px; height: 64px; margin: 0 auto; border-radius: 50%;
+      background: #fff3ef; color: #ff5b00; font-size: 36px; font-weight: 800;
+      display: flex; align-items: center; justify-content: center; line-height: 1;
+    }
+    .err-title { font-size: 18px; font-weight: 700; color: #1a1a1a; margin-top: 16px; }
+    .err-sub { font-size: 13px; color: #8a8a8a; margin-top: 8px; line-height: 1.6; }
+    .err-actions { margin-top: 24px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .err-btn {
+      background: #ff5b00; color: #fff; border: 0; border-radius: 24px;
+      padding: 12px 30px; font-size: 15px; font-weight: 600; cursor: pointer; text-decoration: none;
+    }
+    .err-btn:active { background: #e84e00; }
+  </style>
+</head>
+<body>
+  <div id="boot">
+    <div class="boot-inner">
+      <img class="boot-logo" src="icons/icon-192.png" alt="青屿行">
+      <div class="boot-title">青屿行文旅</div>
+      <div class="boot-sub">Qingvoy · 景点门票 / 精彩旅游体验</div>
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <iframe id="frame" allow="payment; geolocation" referrerpolicy="no-referrer-when-downgrade"></iframe>
+
+  <div id="err">
+    <div class="err-inner">
+      <div class="err-icon">!</div>
+      <div class="err-title">两个网站都无法连接</div>
+      <div class="err-sub">请检查网络后重试，APP 会自动识别可用的网站</div>
+      <div class="err-actions">
+        <button class="err-btn" id="retryBtn">重新连接</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const frame = document.getElementById('frame');
+      const boot = document.getElementById('boot');
+      const errBox = document.getElementById('err');
+
+      const SITES = [
+        { url: 'https://qingyuxing.it.com', name: '主站' },
+        { url: 'https://qingyuxingwenlu.com', name: '备用站' }
+      ];
+      const PROBE_TIMEOUT = 8000;
+      const LOAD_TIMEOUT = 25000;
+
+      let loaded = false;
+      let bootTimer = null;
+      const failedSites = new Set();
+
+      function showBoot() { boot.classList.remove('hide'); }
+      function hideBoot() {
+        if (bootTimer) return;
+        bootTimer = setTimeout(function () { boot.classList.add('hide'); }, 350);
+      }
+      function showErr() { errBox.classList.add('show'); }
+      function hideErr() { errBox.classList.remove('show'); }
+
+      function probe(url) {
+        return new Promise(function (resolve) {
+          const ctrl = new AbortController();
+          const t = setTimeout(function () { ctrl.abort(); }, PROBE_TIMEOUT);
+          fetch(url, { mode: 'no-cors', signal: ctrl.signal, cache: 'no-store' })
+            .then(function () { clearTimeout(t); resolve(true); })
+            .catch(function () { clearTimeout(t); resolve(false); });
+        });
+      }
+
+      function frameLoad(siteUrl) {
+        return new Promise(function (resolve) {
+          let settled = false;
+          frame.onload = function () { if (!settled) { settled = true; resolve(true); } };
+          frame.src = siteUrl;
+          setTimeout(function () { if (!settled) { settled = true; resolve(false); } }, LOAD_TIMEOUT);
+        });
+      }
+
+      async function tryConnect() {
+        hideErr();
+        showBoot();
+        loaded = false;
+
+        const candidates = SITES.filter(function (s) { return !failedSites.has(s.url); });
+        if (candidates.length === 0) { showErr(); return; }
+
+        const probed = await Promise.all(candidates.map(async function (s) {
+          return { site: s, ok: await probe(s.url) };
+        }));
+        const reachable = probed.filter(function (p) { return p.ok; }).map(function (p) { return p.site; });
+
+        const tryOrder = reachable.length > 0 ? reachable : candidates;
+
+        for (const site of tryOrder) {
+          const ok = await frameLoad(site.url);
+          if (ok) {
+            hideErr();
+            loaded = true;
+            hideBoot();
+            return;
+          }
+          failedSites.add(site.url);
+        }
+
+        showErr();
+      }
+
+      function retry() {
+        failedSites.clear();
+        tryConnect();
+      }
+
+      document.getElementById('retryBtn').addEventListener('click', retry);
+      window.addEventListener('online', function () { if (!loaded) retry(); });
+      window.addEventListener('offline', function () { if (!loaded) showErr(); });
+
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('sw.js').catch(function () {});
+        });
+      }
+
+      tryConnect();
+    })();
+  </script>
+</body>
+</html>
