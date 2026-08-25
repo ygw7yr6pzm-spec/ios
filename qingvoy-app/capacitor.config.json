@@ -1,0 +1,9 @@
+{
+  "appId": "com.qingvoy.app",
+  "appName": "青屿行",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#ffffff",
+    "allowMixedContent": false
+  }
+}
